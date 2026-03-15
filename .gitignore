@@ -1,0 +1,10 @@
+/target
+/workdir
+/workdir-python
+/workdir-node
+guest/*.ext4
+guest/vmlinux-fc
+guest/init
+api_keys.json
+CLAUDE.md
+.claude/

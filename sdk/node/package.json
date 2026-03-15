@@ -1,0 +1,34 @@
+{
+  "name": "@zeroboot/sdk",
+  "version": "0.1.0",
+  "description": "Zeroboot SDK — sub-millisecond code execution sandboxes via VM forking",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "sandbox",
+    "code-execution",
+    "vm",
+    "isolation",
+    "zeroboot"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zeroboot/zeroboot",
+    "directory": "sdk/node"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

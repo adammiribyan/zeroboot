@@ -1,0 +1,26 @@
+[package]
+name = "zeroboot"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Sub-millisecond VM sandbox engine via KVM copy-on-write fork"
+repository = "https://github.com/zeroboot/zeroboot"
+keywords = ["vm", "sandbox", "kvm", "isolation", "firecracker"]
+categories = ["virtualization"]
+
+[dependencies]
+kvm-ioctls = "0.19"
+kvm-bindings = { version = "0.10", features = ["fam-wrappers"] }
+vmm-sys-util = "0.12"
+libc = "0.2"
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+nix = { version = "0.29", features = ["fs", "mman", "ioctl"] }
+anyhow = "1"
+uuid = { version = "1", features = ["v7"] }
+
+[profile.release]
+opt-level = 3
+lto = true
