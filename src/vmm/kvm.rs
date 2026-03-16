@@ -25,8 +25,6 @@ pub struct VmSnapshot {
     pub mem_size: usize,
 }
 
-unsafe impl Send for VmSnapshot {}
-unsafe impl Sync for VmSnapshot {}
 
 pub struct ForkedVm {
     pub vm_fd: VmFd,
@@ -38,7 +36,6 @@ pub struct ForkedVm {
     _kvm: Kvm,
 }
 
-unsafe impl Send for ForkedVm {}
 
 impl ForkedVm {
     pub fn fork_cow(snapshot: &VmSnapshot, memfd: i32) -> Result<Self> {

@@ -191,8 +191,6 @@ impl Metrics {
     }
 }
 
-unsafe impl Send for AppState {}
-unsafe impl Sync for AppState {}
 
 // --- Auth helper ---
 
