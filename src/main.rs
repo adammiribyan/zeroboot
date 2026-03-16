@@ -357,7 +357,7 @@ fn cmd_serve(args: &[String]) -> Result<()> {
             .route("/v1/metrics", axum::routing::get(metrics_handler))
             .with_state(state);
 
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
         eprintln!("Zeroboot API server listening on port {}", port);
         axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .with_graceful_shutdown(shutdown_signal())
