@@ -6,5 +6,9 @@ guest/*.ext4
 guest/vmlinux-fc
 guest/init
 api_keys.json
+demo/.env
+demo/venv/
+demo/__pycache__/
+.DS_Store
 CLAUDE.md
 .claude/

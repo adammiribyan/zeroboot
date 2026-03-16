@@ -1,5 +1,7 @@
 # Zeroboot
 
+![demo](demo/demo.gif)
+
 Sub-millisecond VM sandbox engine. Spawns isolated code execution environments in **<1ms** by forking Firecracker snapshots via KVM copy-on-write memory cloning.
 
 ## Benchmarks
