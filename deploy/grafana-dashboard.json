@@ -1,0 +1,247 @@
+{
+  "title": "Zeroboot",
+  "uid": "zeroboot-overview",
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "errors" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "timeouts" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "success" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "expr": "rate(zeroboot_total_executions{status=\"success\"}[1m])", "legendFormat": "success", "refId": "A" },
+        { "expr": "rate(zeroboot_total_executions{status=\"error\"}[1m])", "legendFormat": "errors", "refId": "B" },
+        { "expr": "rate(zeroboot_total_executions{status=\"timeout\"}[1m])", "legendFormat": "timeouts", "refId": "C" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Total Executions",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "zeroboot_total_executions{status=\"success\"}", "legendFormat": "success", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error Count",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "zeroboot_total_executions{status=\"error\"}", "legendFormat": "errors", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Concurrent Forks",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "zeroboot_concurrent_forks", "legendFormat": "concurrent", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Memory Usage",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "zeroboot_memory_usage_bytes", "legendFormat": "RSS", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Timeout Count",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "zeroboot_total_executions{status=\"timeout\"}", "legendFormat": "timeouts", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Error Rate %",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 }] } } },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "rate(zeroboot_total_executions{status=\"error\"}[5m]) / (rate(zeroboot_total_executions{status=\"success\"}[5m]) + rate(zeroboot_total_executions{status=\"error\"}[5m]) + rate(zeroboot_total_executions{status=\"timeout\"}[5m]))", "legendFormat": "error rate", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Avg Fork Time",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 10 }] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "rate(zeroboot_fork_time_milliseconds_sum[5m]) / rate(zeroboot_fork_time_milliseconds_count[5m])", "legendFormat": "avg", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Avg Total Time",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "rate(zeroboot_total_time_milliseconds_sum[5m]) / rate(zeroboot_total_time_milliseconds_count[5m])", "legendFormat": "avg", "refId": "A" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Fork Time Percentiles",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(zeroboot_fork_time_milliseconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, rate(zeroboot_fork_time_milliseconds_bucket[5m]))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(zeroboot_fork_time_milliseconds_bucket[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Exec Time Percentiles",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(zeroboot_exec_time_milliseconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, rate(zeroboot_exec_time_milliseconds_bucket[5m]))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(zeroboot_exec_time_milliseconds_bucket[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Total Time Percentiles",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(zeroboot_total_time_milliseconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, rate(zeroboot_total_time_milliseconds_bucket[5m]))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(zeroboot_total_time_milliseconds_bucket[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Fork Time Heatmap",
+      "type": "heatmap",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "ms" },
+        "color": { "scheme": "Oranges" },
+        "cellGap": 1
+      },
+      "targets": [
+        { "expr": "rate(zeroboot_fork_time_milliseconds_bucket[1m])", "legendFormat": "{{le}}", "format": "heatmap", "refId": "A" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Total Time Heatmap",
+      "type": "heatmap",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "ms" },
+        "color": { "scheme": "Oranges" },
+        "cellGap": 1
+      },
+      "targets": [
+        { "expr": "rate(zeroboot_total_time_milliseconds_bucket[1m])", "legendFormat": "{{le}}", "format": "heatmap", "refId": "A" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "grafanacloud-welbyte-prom" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 15 } } },
+      "targets": [
+        { "expr": "zeroboot_memory_usage_bytes", "legendFormat": "RSS", "refId": "A" }
+      ]
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "heatmap", "name": "Heatmap", "version": "" }
+  ],
+  "schemaVersion": 39
+}

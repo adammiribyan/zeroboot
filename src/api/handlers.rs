@@ -145,12 +145,12 @@ impl Histogram {
         for (i, &bound) in HISTOGRAM_BUCKETS_MS.iter().enumerate() {
             cumulative += self.buckets[i].load(Ordering::Relaxed);
             out.push_str(&format!(
-                "{}{{le=\"{}\"}} {}\n",
+                "{}_bucket{{le=\"{}\"}} {}\n",
                 name, format_bucket(bound), cumulative
             ));
         }
         cumulative += self.buckets[NUM_BUCKETS].load(Ordering::Relaxed);
-        out.push_str(&format!("{}{{le=\"+Inf\"}} {}\n", name, cumulative));
+        out.push_str(&format!("{}_bucket{{le=\"+Inf\"}} {}\n", name, cumulative));
         let sum_us = self.sum_us.load(Ordering::Relaxed);
         let count = self.count.load(Ordering::Relaxed);
         out.push_str(&format!("{}_sum {}\n", name, sum_us as f64 / 1000.0));
