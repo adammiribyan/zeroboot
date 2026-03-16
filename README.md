@@ -5,6 +5,17 @@ Sub-millisecond VM sandbox engine. Spawns isolated code execution environments i
 ![demo](demo/demo.gif)
 *5 isolated VMs forked and executed in 16ms*
 
+## Try it
+
+Run this from your terminal. Each request forks a VM in <1ms.
+
+```bash
+curl -X POST http://api.zeroboot.dev/v1/exec \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer zb_demo_hn2026' \
+  -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
+```
+
 ## Benchmarks
 
 | Metric | Zeroboot | E2B | microsandbox | Daytona |
@@ -133,7 +144,7 @@ If no keys file exists, auth is disabled. Invalid/missing keys return HTTP 401. 
 ### Python
 
 ```bash
-pip install zeroboot
+pip install ./sdk/python
 ```
 
 ```python
@@ -141,8 +152,8 @@ from zeroboot import Sandbox
 
 sb = Sandbox("zb_live_your_key", base_url="http://localhost:8080")
 result = sb.run("import numpy; print(numpy.random.rand(3))")
-print(result.stdout)       # [0.123 0.456 0.789]
-print(result.fork_time_us) # ~750
+print(result.stdout)        # [0.123 0.456 0.789]
+print(result.fork_time_ms)  # ~0.75
 
 # Batch (parallel)
 results = sb.run_batch(["print(i)" for i in range(10)])
@@ -151,7 +162,7 @@ results = sb.run_batch(["print(i)" for i in range(10)])
 ### TypeScript / JavaScript
 
 ```bash
-npm install @zeroboot/sdk
+npm install ./sdk/node
 ```
 
 ```typescript
