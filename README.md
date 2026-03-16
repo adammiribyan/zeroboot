@@ -184,19 +184,19 @@ const results = await sb.runBatch(["print(1)", "print(2)"]);
 
 ```
                     ┌─────────────────────────────────────────┐
-                    │          API Server (axum/tokio)         │
-                    │  auth · rate-limit · metrics · batch     │
+                    │          API Server (axum/tokio)        │
+                    │  auth · rate-limit · metrics · batch    │
                     └──────────────┬──────────────────────────┘
                                    │
                     ┌──────────────▼──────────────────────────┐
-                    │          Fork Engine (kvm.rs)            │
-                    │                                          │
-                    │  1. KVM create_vm + create_irq_chip      │
-                    │  2. Restore IOAPIC redirect table        │
-                    │  3. mmap(MAP_PRIVATE) snapshot memory    │
+                    │          Fork Engine (kvm.rs)           │
+                    │                                         │
+                    │  1. KVM create_vm + create_irq_chip     │
+                    │  2. Restore IOAPIC redirect table       │
+                    │  3. mmap(MAP_PRIVATE) snapshot memory   │
                     │  4. Restore CPU: sregs → XCRS → XSAVE   │
                     │     → regs → LAPIC → MSRs → MP state    │
-                    │  5. Serial I/O via 16550 UART emulation  │
+                    │  5. Serial I/O via 16550 UART emulation │
                     └──────────────┬──────────────────────────┘
                                    │
                ┌───────────────────┼───────────────────┐
