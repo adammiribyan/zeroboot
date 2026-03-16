@@ -16,6 +16,10 @@ curl -X POST https://api.zeroboot.dev/v1/exec \
   -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
 ```
 
+## Status
+
+Zeroboot is a working prototype. The fork primitive and benchmarks are real, the API works, but this is not production-hardened yet. Auth is file-based API keys, there's no TLS termination built in, and the vmstate parser is validated against one Firecracker/kernel version. If you're interested in using this in production or contributing, open an issue.
+
 ## Benchmarks
 
 | Metric | Zeroboot | E2B | microsandbox | Daytona |
