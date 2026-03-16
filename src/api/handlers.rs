@@ -104,6 +104,65 @@ pub struct AppState {
     pub metrics: Metrics,
 }
 
+// Prometheus histogram with fixed bucket boundaries (in milliseconds).
+const HISTOGRAM_BUCKETS_MS: &[f64] = &[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0];
+const NUM_BUCKETS: usize = 13; // must match HISTOGRAM_BUCKETS_MS.len()
+
+pub struct Histogram {
+    // One counter per finite bucket + one for +Inf (index NUM_BUCKETS)
+    buckets: [AtomicU64; NUM_BUCKETS + 1],
+    sum_us: AtomicU64, // sum in microseconds for precision
+    count: AtomicU64,
+}
+
+impl Histogram {
+    fn new() -> Self {
+        Self {
+            buckets: std::array::from_fn(|_| AtomicU64::new(0)),
+            sum_us: AtomicU64::new(0),
+            count: AtomicU64::new(0),
+        }
+    }
+
+    /// Record a value in milliseconds.
+    fn observe(&self, value_ms: f64) {
+        // Place into the first bucket where value <= bound, or +Inf overflow
+        let slot = HISTOGRAM_BUCKETS_MS.iter()
+            .position(|&bound| value_ms <= bound)
+            .unwrap_or(NUM_BUCKETS);
+        self.buckets[slot].fetch_add(1, Ordering::Relaxed);
+        self.sum_us.fetch_add((value_ms * 1000.0) as u64, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Render as Prometheus histogram text. `name` is the metric base name (e.g. "zeroboot_fork_time_milliseconds").
+    fn render(&self, name: &str, help: &str) -> String {
+        let mut out = format!(
+            "# HELP {} {}\n# TYPE {} histogram\n",
+            name, help, name
+        );
+        let mut cumulative = 0u64;
+        for (i, &bound) in HISTOGRAM_BUCKETS_MS.iter().enumerate() {
+            cumulative += self.buckets[i].load(Ordering::Relaxed);
+            out.push_str(&format!(
+                "{}{{le=\"{}\"}} {}\n",
+                name, format_bucket(bound), cumulative
+            ));
+        }
+        cumulative += self.buckets[NUM_BUCKETS].load(Ordering::Relaxed);
+        out.push_str(&format!("{}{{le=\"+Inf\"}} {}\n", name, cumulative));
+        let sum_us = self.sum_us.load(Ordering::Relaxed);
+        let count = self.count.load(Ordering::Relaxed);
+        out.push_str(&format!("{}_sum {}\n", name, sum_us as f64 / 1000.0));
+        out.push_str(&format!("{}_count {}\n", name, count));
+        out
+    }
+}
+
+fn format_bucket(v: f64) -> String {
+    if v == v.floor() { format!("{}", v as u64) } else { format!("{}", v) }
+}
+
 pub struct Metrics {
     pub total_executions: AtomicU64,
     pub total_errors: AtomicU64,
@@ -111,6 +170,9 @@ pub struct Metrics {
     pub concurrent_forks: AtomicU64,
     pub fork_time_sum_us: AtomicU64,
     pub exec_time_sum_us: AtomicU64,
+    pub fork_time_hist: Histogram,
+    pub exec_time_hist: Histogram,
+    pub total_time_hist: Histogram,
 }
 
 impl Metrics {
@@ -122,6 +184,9 @@ impl Metrics {
             concurrent_forks: AtomicU64::new(0),
             fork_time_sum_us: AtomicU64::new(0),
             exec_time_sum_us: AtomicU64::new(0),
+            fork_time_hist: Histogram::new(),
+            exec_time_hist: Histogram::new(),
+            total_time_hist: Histogram::new(),
         }
     }
 }
@@ -276,6 +341,7 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
         };
         let fork_time_ms = round2(vm.fork_time_us / 1000.0);
         state.metrics.fork_time_sum_us.fetch_add(vm.fork_time_us as u64, Ordering::Relaxed);
+        state.metrics.fork_time_hist.observe(vm.fork_time_us / 1000.0);
 
         let exec_start = Instant::now();
         let command = format!("{}\n", req.code);
@@ -295,6 +361,7 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
 
         let exec_time_ms = round2(exec_start.elapsed().as_secs_f64() * 1000.0);
         state.metrics.exec_time_sum_us.fetch_add((exec_time_ms * 1000.0) as u64, Ordering::Relaxed);
+        state.metrics.exec_time_hist.observe(exec_start.elapsed().as_secs_f64() * 1000.0);
         state.metrics.total_executions.fetch_add(1, Ordering::Relaxed);
 
         let (output, timed_out) = match result {
@@ -347,6 +414,7 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
         }
     })();
 
+    state.metrics.total_time_hist.observe(result.total_time_ms);
     state.metrics.concurrent_forks.fetch_sub(1, Ordering::Relaxed);
     result
 }
@@ -449,7 +517,7 @@ pub async fn metrics_handler(
     let fork_sum = m.fork_time_sum_us.load(Ordering::Relaxed);
     let exec_sum = m.exec_time_sum_us.load(Ordering::Relaxed);
 
-    format!(
+    let mut out = format!(
         "# HELP zeroboot_total_executions Total number of executions\n\
          # TYPE zeroboot_total_executions counter\n\
          zeroboot_total_executions{{status=\"success\"}} {}\n\
@@ -470,7 +538,22 @@ pub async fn metrics_handler(
         total.saturating_sub(errors).saturating_sub(timeouts), errors, timeouts,
         concurrent, fork_sum, exec_sum,
         get_rss_bytes(),
-    )
+    );
+
+    out.push_str(&m.fork_time_hist.render(
+        "zeroboot_fork_time_milliseconds",
+        "Histogram of VM fork times in milliseconds",
+    ));
+    out.push_str(&m.exec_time_hist.render(
+        "zeroboot_exec_time_milliseconds",
+        "Histogram of code execution times in milliseconds",
+    ));
+    out.push_str(&m.total_time_hist.render(
+        "zeroboot_total_time_milliseconds",
+        "Histogram of total request times in milliseconds",
+    ));
+
+    out
 }
 
 fn get_rss_bytes() -> u64 {
