@@ -26,6 +26,7 @@ class Sandbox:
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "zeroboot-python/0.1.0",
         }
 
     def _request(self, path: str, body: dict) -> dict:

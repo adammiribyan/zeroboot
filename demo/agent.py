@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 import anthropic
-import requests
+from zeroboot import Sandbox
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
@@ -18,11 +18,13 @@ from rich.text import Text
 
 load_dotenv(Path(__file__).parent / ".env")
 
-ZEROBOOT_URL = os.environ.get("ZEROBOOT_URL", "https://api.zeroboot.dev")
-ZEROBOOT_KEY = os.environ.get("ZEROBOOT_API_KEY", "")
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 VERSION = "0.1.0"
 
+sandbox = Sandbox(
+    api_key=os.environ.get("ZEROBOOT_API_KEY", ""),
+    base_url=os.environ.get("ZEROBOOT_URL", "https://api.zeroboot.dev"),
+)
 console = Console()
 
 SYSTEM = """\
@@ -70,43 +72,35 @@ TOOLS = [
     },
 ]
 
-HEADERS = {"Authorization": f"Bearer {ZEROBOOT_KEY}", "Content-Type": "application/json"}
-
-
 def exec_single(code):
     t0 = time.perf_counter()
     try:
-        r = requests.post(f"{ZEROBOOT_URL}/v1/exec",
-                          json={"code": code, "language": "python"},
-                          headers=HEADERS, timeout=120)
+        result = sandbox.run(code)
         wall = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
-        return r.json(), wall
-    except requests.RequestException as e:
+        return result, wall
+    except Exception as e:
         wall = (time.perf_counter() - t0) * 1000
-        return {"stdout": "", "stderr": str(e), "exit_code": 1,
-                "total_time_ms": 0, "fork_time_ms": 0, "exec_time_ms": 0}, wall
+        console.print(f"  [red]API error:[/] {e}")
+        from zeroboot import Result
+        return Result(stdout="", stderr=str(e), exit_code=1), wall
 
 
 def exec_batch(approaches):
     t0 = time.perf_counter()
     try:
-        r = requests.post(f"{ZEROBOOT_URL}/v1/exec/batch",
-                          json={"executions": [{"code": a["code"], "language": "python"}
-                                               for a in approaches]},
-                          headers=HEADERS, timeout=120)
+        results = sandbox.run_batch([a["code"] for a in approaches])
         wall = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
-        return r.json()["results"], wall
-    except requests.RequestException as e:
+        return results, wall
+    except Exception as e:
         wall = (time.perf_counter() - t0) * 1000
-        return [{"stdout": "", "stderr": str(e), "exit_code": 1,
-                 "total_time_ms": 0, "fork_time_ms": 0, "exec_time_ms": 0}
+        console.print(f"  [red]API error:[/] {e}")
+        from zeroboot import Result
+        return [Result(stdout="", stderr=str(e), exit_code=1)
                 for _ in approaches], wall
 
 
 def results_table(approaches, results, wall_ms):
-    exec_ms = max(r["total_time_ms"] for r in results)
+    exec_ms = max(r.total_time_ms for r in results)
     n = len(approaches)
 
     table = Table(title=f"[bold green]{n} VMs forked and executed in {exec_ms:.0f}ms[/]",
@@ -117,14 +111,14 @@ def results_table(approaches, results, wall_ms):
     table.add_column("Status", justify="center", min_width=6)
 
     for a, r in zip(approaches, results):
-        if r["exit_code"] != 0:
+        if r.exit_code != 0:
             status = "[red]error[/]"
         else:
             status = "[green]done[/]"
         table.add_row(
             a["label"],
-            f"{r['exec_time_ms']:.1f}ms",
-            f"{r['fork_time_ms']:.1f}ms",
+            f"{r.exec_time_ms:.1f}ms",
+            f"{r.fork_time_ms:.1f}ms",
             status,
         )
 
@@ -138,11 +132,11 @@ def fmt_time(ms):
 def format_tool_result(approaches, results, wall_ms):
     lines = []
     for a, r in zip(approaches, results):
-        if r["exit_code"] != 0:
-            lines.append(f"[{a['label']}] FAILED (exit {r['exit_code']})")
+        if r.exit_code != 0:
+            lines.append(f"[{a['label']}] FAILED (exit {r.exit_code}): {r.stderr.strip()}")
         else:
-            lines.append(f"[{a['label']}] exit_code=0, {r['total_time_ms']:.1f}ms, raw stdout:\n{r['stdout'].strip()}")
-    exec_ms = max(r["total_time_ms"] for r in results)
+            lines.append(f"[{a['label']}] exit_code=0, {r.total_time_ms:.1f}ms, raw stdout:\n{r.stdout.strip()}")
+    exec_ms = max(r.total_time_ms for r in results)
     lines.append(f"\nAll {len(approaches)} sandboxes executed in {exec_ms:.0f}ms (parallel)")
     lines.append("All code with exit_code=0 ran successfully. Interpret the results and give your answer.")
     return "\n".join(lines)
@@ -167,14 +161,14 @@ def handle_single(block, messages):
     with Live(Spinner("dots", text="Running in sandbox..."), console=console, transient=True):
         result, wall_ms = exec_single(code)
 
-    exec_ms = result["total_time_ms"]
-    status = "[green]done[/]" if result["exit_code"] == 0 else "[red]error[/]"
+    exec_ms = result.total_time_ms
+    status = "[green]done[/]" if result.exit_code == 0 else "[red]error[/]"
     console.print(f"  {status} [dim]executed in {fmt_time(exec_ms)}[/]\n")
 
-    if result["exit_code"] != 0:
-        content = f"FAILED: {result['stderr'].strip()}"
+    if result.exit_code != 0:
+        content = f"FAILED: {result.stderr.strip()}"
     else:
-        content = f"stdout: {result['stdout'].strip()}"
+        content = f"stdout: {result.stdout.strip()}"
     messages.append({"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": block.id, "content": content}
     ]})

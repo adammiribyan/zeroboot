@@ -22,6 +22,7 @@ export class Sandbox {
     this.headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "User-Agent": "zeroboot-node/0.1.0",
     };
   }
 
