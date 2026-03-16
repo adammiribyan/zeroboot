@@ -18,7 +18,7 @@ from rich.text import Text
 
 load_dotenv(Path(__file__).parent / ".env")
 
-ZEROBOOT_URL = os.environ.get("ZEROBOOT_URL", "http://api.zeroboot.dev")
+ZEROBOOT_URL = os.environ.get("ZEROBOOT_URL", "https://api.zeroboot.dev")
 ZEROBOOT_KEY = os.environ.get("ZEROBOOT_API_KEY", "")
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 VERSION = "0.1.0"

@@ -32,7 +32,7 @@ results.forEach((r) => console.log(r.stdout));
 
 ### `new Sandbox(apiKey, baseUrl?)`
 
-Create a client. Defaults to `http://api.zeroboot.dev`. Uses the native `fetch` API (Node.js 18+). No external dependencies.
+Create a client. Defaults to `https://api.zeroboot.dev`. Uses the native `fetch` API (Node.js 18+). No external dependencies.
 
 ### `sandbox.run(code, options?) -> Promise<Result>`
 

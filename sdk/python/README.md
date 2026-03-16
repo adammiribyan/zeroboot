@@ -32,7 +32,7 @@ for r in results:
 
 ## API
 
-### `Sandbox(api_key, base_url="http://api.zeroboot.dev")`
+### `Sandbox(api_key, base_url="https://api.zeroboot.dev")`
 
 Create a client. No external dependencies required.
 

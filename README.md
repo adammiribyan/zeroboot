@@ -10,7 +10,7 @@ Sub-millisecond VM sandbox engine. Spawns isolated code execution environments i
 Run this from your terminal. Each request forks a VM in <1ms.
 
 ```bash
-curl -X POST http://api.zeroboot.dev/v1/exec \
+curl -X POST https://api.zeroboot.dev/v1/exec \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer zb_demo_hn2026' \
   -d '{"code":"import numpy as np; print(np.random.rand(3))"}'

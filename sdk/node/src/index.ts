@@ -17,7 +17,7 @@ export class Sandbox {
   private baseUrl: string;
   private headers: Record<string, string>;
 
-  constructor(apiKey: string, baseUrl: string = "http://api.zeroboot.dev") {
+  constructor(apiKey: string, baseUrl: string = "https://api.zeroboot.dev") {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.headers = {
       Authorization: `Bearer ${apiKey}`,

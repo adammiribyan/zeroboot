@@ -27,5 +27,5 @@ python agent.py
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
 | `ZEROBOOT_API_KEY` | (empty) | Zeroboot API key (if auth is enabled) |
-| `ZEROBOOT_URL` | `http://api.zeroboot.dev` | Zeroboot API base URL |
+| `ZEROBOOT_URL` | `https://api.zeroboot.dev` | Zeroboot API base URL |
 | `CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model to use |

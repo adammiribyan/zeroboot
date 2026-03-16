@@ -21,7 +21,7 @@ class Result:
 class Sandbox:
     """Client for the Zeroboot sandbox API."""
 
-    def __init__(self, api_key: str, base_url: str = "http://api.zeroboot.dev"):
+    def __init__(self, api_key: str, base_url: str = "https://api.zeroboot.dev"):
         self.base_url = base_url.rstrip("/")
         self.headers = {
             "Authorization": f"Bearer {api_key}",
