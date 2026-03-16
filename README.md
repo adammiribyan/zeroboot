@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="zeroboot" width="300">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+    <img alt="Zeroboot" src="assets/logo-light.svg" width="500">
+  </picture>
 </p>
 
 <p align="center">
