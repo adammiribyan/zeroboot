@@ -7,10 +7,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zeroboot/zeroboot/stargazers"><img src="https://img.shields.io/github/stars/zeroboot/zeroboot?style=flat&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/adammiribyan/zeroboot/stargazers"><img src="https://img.shields.io/github/stars/adammiribyan/zeroboot?style=flat&color=yellow" alt="Stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-2021_edition-orange" alt="Rust"></a>
-  <a href="https://api.zeroboot.dev/v1/health"><img src="https://img.shields.io/endpoint?url=https://api.zeroboot.dev/v1/health-badge&label=api" alt="API Status"></a>
 </p>
 
 ---
@@ -74,7 +73,7 @@ const result = await new Sandbox("zb_live_your_key").run("console.log(1+1)");
 
 ## Status
 
-Working prototype. The fork primitive, benchmarks, and API are real, but not production-hardened yet. [Open an issue](https://github.com/zeroboot/zeroboot/issues) if you're interested.
+Working prototype. The fork primitive, benchmarks, and API are real, but not production-hardened yet. [Open an issue](https://github.com/adammiribyan/zeroboot/issues) if you're interested.
 
 ## License
 
