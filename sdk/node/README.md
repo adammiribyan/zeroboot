@@ -1,6 +1,6 @@
 # @zeroboot/sdk
 
-Sub-millisecond code execution sandboxes. Each call runs in an isolated VM forked via copy-on-write memory cloning.
+Sub-millisecond VM sandboxes for AI agents via copy-on-write forking.
 
 ## Usage
 

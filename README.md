@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Sub-millisecond VM sandboxes via copy-on-write forking</strong>
+  <strong>Sub-millisecond VM sandboxes for AI agents via copy-on-write forking</strong>
 </p>
 
 <p align="center">
