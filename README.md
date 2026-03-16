@@ -16,7 +16,6 @@
 ---
 
 ![demo](demo/demo.gif)
-*5 isolated VMs forked and executed in 16ms*
 
 ## Try it
 
@@ -46,28 +45,9 @@ Each sandbox is a real KVM virtual machine with hardware-enforced memory isolati
                               (copy-on-write)         (~0.8ms)
 ```
 
-1. **Template** (one-time): Firecracker boots a VM, pre-loads your runtime (Python+numpy, Node.js, etc.), and snapshots memory + CPU state
-2. **Fork** (~0.8ms): Creates a new KVM VM, maps snapshot memory as CoW, restores all CPU state, starts executing
-3. **Isolation**: Each fork is a separate KVM VM — writes trigger CoW page faults, forks can't see each other's data
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
-
-## Quickstart
-
-```bash
-cargo build --release
-
-# Create a template (one-time, ~15s)
-sudo target/release/zeroboot template guest/vmlinux-fc workdir-python/rootfs.ext4 workdir-python 15 /init.py
-
-# Run code
-sudo target/release/zeroboot test-exec workdir-python "print(1+1)"
-
-# Start API server
-sudo target/release/zeroboot serve "python:workdir-python,node:workdir-node" 8080
-```
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for systemd, fleet deploy, and production setup.
+1. **Template** (one-time): Firecracker boots a VM, pre-loads your runtime, and snapshots memory + CPU state
+2. **Fork** (~0.8ms): Creates a new KVM VM, maps snapshot memory as CoW, restores all CPU state
+3. **Isolation**: Each fork is a separate KVM VM with hardware-enforced memory isolation
 
 ## SDKs
 
@@ -75,32 +55,26 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for systemd, fleet deploy, and prod
 
 ```python
 from zeroboot import Sandbox
-sb = Sandbox("zb_live_your_key", base_url="http://localhost:8080")
-result = sb.run("import numpy; print(numpy.random.rand(3))")
+sb = Sandbox("zb_live_your_key")
+result = sb.run("print(1 + 1)")
 ```
 
 **TypeScript** &mdash; [sdk/node](sdk/node/)
 
 ```typescript
 import { Sandbox } from "@zeroboot/sdk";
-const sb = new Sandbox("zb_live_your_key", "http://localhost:8080");
-const result = await sb.run("console.log(1 + 1)", { language: "node" });
+const result = await new Sandbox("zb_live_your_key").run("console.log(1+1)");
 ```
 
-## API
+## Docs
 
-See [docs/API.md](docs/API.md) for the full reference.
-
-```
-POST /v1/exec        — Execute code in an isolated sandbox
-POST /v1/exec/batch  — Parallel batch execution
-GET  /v1/health      — Template status
-GET  /v1/metrics     — Prometheus metrics
-```
+- [API Reference](docs/API.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
 
 ## Status
 
-Zeroboot is a working prototype. The fork primitive and benchmarks are real, the API works, but this is not production-hardened yet. If you're interested in using this or contributing, [open an issue](https://github.com/zeroboot/zeroboot/issues).
+Working prototype. The fork primitive, benchmarks, and API are real, but not production-hardened yet. [Open an issue](https://github.com/zeroboot/zeroboot/issues) if you're interested.
 
 ## License
 
