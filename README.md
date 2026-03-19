@@ -29,10 +29,6 @@ curl -X POST https://api.zeroboot.dev/v1/exec \
   -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
 ```
 
-## Early access
-
-We're building the managed service. Sign up for early access: https://tally.so/r/aQGkpb
-
 ## Benchmarks
 
 | Metric | Zeroboot | E2B | microsandbox | Daytona |
@@ -82,6 +78,24 @@ const result = await new Sandbox("zb_live_your_key").run("console.log(1+1)");
 ## Status
 
 Working prototype. The fork primitive, benchmarks, and API are real, but not production-hardened yet. [Open an issue](https://github.com/adammiribyan/zeroboot/issues) if you're interested.
+
+## Self-host or managed
+
+Zeroboot is open source. Self-host it on any Linux box with KVM, or use the managed API:
+
+    curl -X POST https://api.zeroboot.dev/v1/exec \
+      -H 'Content-Type: application/json' \
+      -H 'Authorization: Bearer zb_demo_hn2026' \
+      -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
+
+Building the managed service for teams that don't want to run their own infra. Sign up for early access: https://tally.so/r/aQGkpb
+
+## Known limitations
+
+- Forks share CSPRNG state from the snapshot. Kernel entropy is reseeded via RNDADDENTROPY but userspace PRNGs (numpy, OpenSSL) need explicit reseeding per fork. See [Firecracker's guidance](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/random-for-clones.md).
+- Single vCPU per fork. Multi-vCPU is architecturally possible but not implemented.
+- No networking inside forks. Sandboxes communicate via serial I/O only.
+- Template updates require a full re-snapshot (~15s). No incremental patching.
 
 ## License
 
