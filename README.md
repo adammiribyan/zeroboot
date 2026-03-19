@@ -29,6 +29,10 @@ curl -X POST https://api.zeroboot.dev/v1/exec \
   -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
 ```
 
+## Early access
+
+We're building the managed service. Sign up for early access: https://tally.so/r/aQGkpb
+
 ## Benchmarks
 
 | Metric | Zeroboot | E2B | microsandbox | Daytona |
