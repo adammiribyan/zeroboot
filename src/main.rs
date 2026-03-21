@@ -1,18 +1,19 @@
-mod vmm;
 mod api;
+mod vmm;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
+use std::ptr;
 use std::sync::Arc;
 use std::time::Instant;
-use std::ptr;
 
-use vmm::kvm::{ForkedVm, VmSnapshot, create_snapshot_memfd};
+use api::handlers::{
+    batch_handler, exec_handler, health_handler, metrics_handler, AppState, Metrics, Template,
+};
 use vmm::firecracker;
+use vmm::kvm::{create_snapshot_memfd, ForkedVm, VmSnapshot};
 use vmm::vmstate;
-use api::handlers::{AppState, Template, Metrics, exec_handler, batch_handler, health_handler, metrics_handler};
 
 fn main() -> Result<()> {
-
     let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("help");
 
@@ -25,7 +26,9 @@ fn main() -> Result<()> {
             eprintln!("Usage: zeroboot <command>");
             eprintln!("  template <kernel> <rootfs> <workdir>  - Boot & snapshot a template VM");
             eprintln!("  bench <workdir>                       - Run fork benchmarks");
-            eprintln!("  test-exec <workdir> <command>         - Test executing a command in a fork");
+            eprintln!(
+                "  test-exec <workdir> <command>         - Test executing a command in a fork"
+            );
             eprintln!("  serve <workdir> [port]                - Start API server");
             Ok(())
         }
@@ -50,11 +53,16 @@ fn load_snapshot(workdir: &str) -> Result<(VmSnapshot, i32)> {
     // Load vmstate for CPU registers
     let state_data = std::fs::read(&state_path)?;
     let parsed = vmstate::parse_vmstate(&state_data)?;
-    eprintln!("  CPU state loaded: RIP={:#x}, RSP={:#x}, CR3={:#x}",
-        parsed.regs.rip, parsed.regs.rsp, parsed.sregs.cr3);
+    eprintln!(
+        "  CPU state loaded: RIP={:#x}, RSP={:#x}, CR3={:#x}",
+        parsed.regs.rip, parsed.regs.rsp, parsed.sregs.cr3
+    );
     eprintln!("  MSRs: {} entries", parsed.msrs.len());
 
-    eprintln!("  CPUID: {} entries from Firecracker snapshot", parsed.cpuid_entries.len());
+    eprintln!(
+        "  CPUID: {} entries from Firecracker snapshot",
+        parsed.cpuid_entries.len()
+    );
 
     let snapshot = VmSnapshot {
         regs: parsed.regs,
@@ -84,8 +92,14 @@ fn cmd_template(args: &[String]) -> Result<()> {
     std::fs::create_dir_all(workdir)?;
 
     let start = Instant::now();
-    let mem_mib: u32 = args.get(5).and_then(|s| s.parse().ok())
-        .or_else(|| std::env::var("ZEROBOOT_MEM_MIB").ok().and_then(|v| v.parse().ok()))
+    let mem_mib: u32 = args
+        .get(5)
+        .and_then(|s| s.parse().ok())
+        .or_else(|| {
+            std::env::var("ZEROBOOT_MEM_MIB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
         .unwrap_or(512);
     let (state_path, mem_path, mem_mib) = firecracker::create_template_snapshot(
         kernel, rootfs, workdir, mem_mib, wait_secs, init_path,
@@ -132,7 +146,9 @@ fn cmd_test_exec(args: &[String]) -> Result<()> {
     println!("=== Output ===");
     println!("{}", output);
 
-    unsafe { libc::close(memfd); }
+    unsafe {
+        libc::close(memfd);
+    }
     Ok(())
 }
 
@@ -148,23 +164,42 @@ fn cmd_fork_bench(args: &[String]) -> Result<()> {
 
     // Phase 1: Pure mmap CoW
     let mut mmap_times: Vec<f64> = Vec::with_capacity(10000);
-    for _ in 0..100 { // warmup
+    for _ in 0..100 {
+        // warmup
         let p = unsafe {
-            libc::mmap(ptr::null_mut(), mem_size,
+            libc::mmap(
+                ptr::null_mut(),
+                mem_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_NORESERVE, memfd, 0)
+                libc::MAP_PRIVATE | libc::MAP_NORESERVE,
+                memfd,
+                0,
+            )
         };
-        if p != libc::MAP_FAILED { unsafe { libc::munmap(p, mem_size); } }
+        if p != libc::MAP_FAILED {
+            unsafe {
+                libc::munmap(p, mem_size);
+            }
+        }
     }
     for _ in 0..10000 {
         let start = Instant::now();
         let p = unsafe {
-            libc::mmap(ptr::null_mut(), mem_size,
+            libc::mmap(
+                ptr::null_mut(),
+                mem_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_NORESERVE, memfd, 0)
+                libc::MAP_PRIVATE | libc::MAP_NORESERVE,
+                memfd,
+                0,
+            )
         };
         mmap_times.push(start.elapsed().as_secs_f64() * 1_000_000.0);
-        if p != libc::MAP_FAILED { unsafe { libc::munmap(p, mem_size); } }
+        if p != libc::MAP_FAILED {
+            unsafe {
+                libc::munmap(p, mem_size);
+            }
+        }
     }
     mmap_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
     print_percentiles("Pure mmap CoW", &mmap_times);
@@ -202,8 +237,10 @@ fn cmd_fork_bench(args: &[String]) -> Result<()> {
         if output.contains("hello") {
             success_count += 1;
         } else if i == 0 {
-            eprintln!("  Warning: output doesn't contain 'hello': {}",
-                &output[..output.len().min(200)]);
+            eprintln!(
+                "  Warning: output doesn't contain 'hello': {}",
+                &output[..output.len().min(200)]
+            );
         }
         drop(vm);
     }
@@ -227,10 +264,14 @@ fn cmd_fork_bench(args: &[String]) -> Result<()> {
         }
         let total = start.elapsed();
         let rss_kb = get_rss_kb();
-        println!("  {} concurrent: {:.1}ms total, {:.1}µs/fork, RSS: {:.1}MB ({:.1}KB/fork)",
-            count, total.as_secs_f64() * 1000.0,
+        println!(
+            "  {} concurrent: {:.1}ms total, {:.1}µs/fork, RSS: {:.1}MB ({:.1}KB/fork)",
+            count,
+            total.as_secs_f64() * 1000.0,
             total.as_secs_f64() * 1_000_000.0 / *count as f64,
-            rss_kb as f64 / 1024.0, rss_kb as f64 / *count as f64);
+            rss_kb as f64 / 1024.0,
+            rss_kb as f64 / *count as f64
+        );
         drop(vms);
     }
 
@@ -242,23 +283,38 @@ fn cmd_fork_bench(args: &[String]) -> Result<()> {
         let offset: usize = 0x50000;
 
         let fork_a = unsafe {
-            libc::mmap(ptr::null_mut(), mem_size,
+            libc::mmap(
+                ptr::null_mut(),
+                mem_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_NORESERVE, memfd, 0)
+                libc::MAP_PRIVATE | libc::MAP_NORESERVE,
+                memfd,
+                0,
+            )
         };
-        unsafe { *(fork_a.add(offset) as *mut u64) = secret; }
+        unsafe {
+            *(fork_a.add(offset) as *mut u64) = secret;
+        }
 
         let fork_b = unsafe {
-            libc::mmap(ptr::null_mut(), mem_size,
+            libc::mmap(
+                ptr::null_mut(),
+                mem_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_NORESERVE, memfd, 0)
+                libc::MAP_PRIVATE | libc::MAP_NORESERVE,
+                memfd,
+                0,
+            )
         };
         let b_val = unsafe { *(fork_b.add(offset) as *const u64) };
 
         if b_val == secret {
             println!("  FAIL: Isolation broken!");
         } else {
-            println!("  PASS: Isolation verified (Fork B reads {:#x}, not secret {:#x})", b_val, secret);
+            println!(
+                "  PASS: Isolation verified (Fork B reads {:#x}, not secret {:#x})",
+                b_val, secret
+            );
         }
 
         unsafe {
@@ -282,31 +338,47 @@ fn cmd_fork_bench(args: &[String]) -> Result<()> {
 
     println!();
     println!("=== Comparison Table ===");
-    println!("| {:20} | {:>12} | {:>12} | {:>12} | {:>12} |",
-        "Metric", "Zeroboot", "E2B", "microsandbox", "Daytona");
-    println!("|{:-<22}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|",
-        "", "", "", "", "");
-    println!("| {:20} | {:>9.3}ms | {:>9}ms | {:>9}ms | {:>9}ms |",
-        "Spawn latency p50", p50_ms, "~150", "~200", "~27");
-    println!("| {:20} | {:>9.3}ms | {:>9}ms | {:>9}ms | {:>9}ms |",
-        "Spawn latency p99", p99_ms, "~300", "~400", "~90");
-    println!("| {:20} | {:>9}KB | {:>9}MB | {:>9}MB | {:>9}MB |",
-        "Memory per sandbox", "~265", "~128", "~50", "~50");
-    println!("| {:20} | {:>9} | {:>9} | {:>9} | {:>9} |",
-        "Max concurrent", "1000+", "~100", "~100", "~1000");
+    println!(
+        "| {:20} | {:>12} | {:>12} | {:>12} | {:>12} |",
+        "Metric", "Zeroboot", "E2B", "microsandbox", "Daytona"
+    );
+    println!(
+        "|{:-<22}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|",
+        "", "", "", "", ""
+    );
+    println!(
+        "| {:20} | {:>9.3}ms | {:>9}ms | {:>9}ms | {:>9}ms |",
+        "Spawn latency p50", p50_ms, "~150", "~200", "~27"
+    );
+    println!(
+        "| {:20} | {:>9.3}ms | {:>9}ms | {:>9}ms | {:>9}ms |",
+        "Spawn latency p99", p99_ms, "~300", "~400", "~90"
+    );
+    println!(
+        "| {:20} | {:>9}KB | {:>9}MB | {:>9}MB | {:>9}MB |",
+        "Memory per sandbox", "~265", "~128", "~50", "~50"
+    );
+    println!(
+        "| {:20} | {:>9} | {:>9} | {:>9} | {:>9} |",
+        "Max concurrent", "1000+", "~100", "~100", "~1000"
+    );
 
     let speedup = 27.0 / p50_ms;
     println!();
     println!("Speedup vs Daytona: {:.0}x faster", speedup);
-    if p50_ms < 1.0 { println!("*** SUB-MILLISECOND SPAWN ACHIEVED! ***"); }
+    if p50_ms < 1.0 {
+        println!("*** SUB-MILLISECOND SPAWN ACHIEVED! ***");
+    }
 
-    unsafe { libc::close(memfd); }
+    unsafe {
+        libc::close(memfd);
+    }
     Ok(())
 }
 
 fn load_api_keys() -> Vec<String> {
-    let path = std::env::var("ZEROBOOT_API_KEYS_FILE")
-        .unwrap_or_else(|_| "api_keys.json".to_string());
+    let path =
+        std::env::var("ZEROBOOT_API_KEYS_FILE").unwrap_or_else(|_| "api_keys.json".to_string());
     match std::fs::read_to_string(&path) {
         Ok(data) => serde_json::from_str::<Vec<String>>(&data).unwrap_or_default(),
         Err(_) => {
@@ -341,7 +413,8 @@ fn cmd_serve(args: &[String]) -> Result<()> {
     }
 
     let state = Arc::new(AppState {
-        templates, api_keys,
+        templates,
+        api_keys,
         rate_limiters: std::sync::Mutex::new(std::collections::HashMap::new()),
         metrics: Metrics::new(),
     });
@@ -357,11 +430,17 @@ fn cmd_serve(args: &[String]) -> Result<()> {
             .route("/v1/metrics", axum::routing::get(metrics_handler))
             .with_state(state);
 
-        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
         eprintln!("Zeroboot API server listening on port {}", port);
-        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .with_graceful_shutdown(shutdown_signal())
-            .await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
         eprintln!("Server shutdown complete");
     });
 
@@ -376,14 +455,36 @@ async fn shutdown_signal() {
 fn print_percentiles(label: &str, times: &[f64]) {
     let n = times.len();
     println!("  {} ({} iterations):", label, n);
-    println!("    Min:  {:>8.1} µs ({:.3} ms)", times[0], times[0] / 1000.0);
-    println!("    Avg:  {:>8.1} µs ({:.3} ms)",
+    println!(
+        "    Min:  {:>8.1} µs ({:.3} ms)",
+        times[0],
+        times[0] / 1000.0
+    );
+    println!(
+        "    Avg:  {:>8.1} µs ({:.3} ms)",
         times.iter().sum::<f64>() / n as f64,
-        times.iter().sum::<f64>() / n as f64 / 1000.0);
-    println!("    P50:  {:>8.1} µs ({:.3} ms)", times[n/2], times[n/2] / 1000.0);
-    println!("    P95:  {:>8.1} µs ({:.3} ms)", times[n*95/100], times[n*95/100] / 1000.0);
-    println!("    P99:  {:>8.1} µs ({:.3} ms)", times[n*99/100], times[n*99/100] / 1000.0);
-    println!("    Max:  {:>8.1} µs ({:.3} ms)", times[n-1], times[n-1] / 1000.0);
+        times.iter().sum::<f64>() / n as f64 / 1000.0
+    );
+    println!(
+        "    P50:  {:>8.1} µs ({:.3} ms)",
+        times[n / 2],
+        times[n / 2] / 1000.0
+    );
+    println!(
+        "    P95:  {:>8.1} µs ({:.3} ms)",
+        times[n * 95 / 100],
+        times[n * 95 / 100] / 1000.0
+    );
+    println!(
+        "    P99:  {:>8.1} µs ({:.3} ms)",
+        times[n * 99 / 100],
+        times[n * 99 / 100] / 1000.0
+    );
+    println!(
+        "    Max:  {:>8.1} µs ({:.3} ms)",
+        times[n - 1],
+        times[n - 1] / 1000.0
+    );
 }
 
 fn get_rss_kb() -> u64 {
@@ -399,7 +500,16 @@ fn get_rss_kb() -> u64 {
 
 #[allow(dead_code)]
 fn debug_sizes() {
-    eprintln!("kvm_ioapic_state: {}", std::mem::size_of::<kvm_bindings::kvm_ioapic_state>());
-    eprintln!("kvm_irqchip: {}", std::mem::size_of::<kvm_bindings::kvm_irqchip>());
-    eprintln!("redirtbl entry: {}", std::mem::size_of::<kvm_bindings::kvm_ioapic_state__bindgen_ty_1>());
+    eprintln!(
+        "kvm_ioapic_state: {}",
+        std::mem::size_of::<kvm_bindings::kvm_ioapic_state>()
+    );
+    eprintln!(
+        "kvm_irqchip: {}",
+        std::mem::size_of::<kvm_bindings::kvm_irqchip>()
+    );
+    eprintln!(
+        "redirtbl entry: {}",
+        std::mem::size_of::<kvm_bindings::kvm_ioapic_state__bindgen_ty_1>()
+    );
 }
