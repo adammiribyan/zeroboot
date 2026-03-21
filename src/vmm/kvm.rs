@@ -1,7 +1,8 @@
-use anyhow::{Result, bail};
-use kvm_bindings::*;
+use anyhow::{bail, Result};
 use kvm_bindings::CpuId;
-use kvm_ioctls::{Kvm, VcpuExit, VmFd, VcpuFd};
+use kvm_bindings::*;
+use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
+use std::io::Read;
 use std::ptr;
 use std::time::{Duration, Instant};
 
@@ -25,7 +26,6 @@ pub struct VmSnapshot {
     pub mem_size: usize,
 }
 
-
 pub struct ForkedVm {
     pub vm_fd: VmFd,
     pub vcpu_fd: VcpuFd,
@@ -35,7 +35,6 @@ pub struct ForkedVm {
     pub fork_time_us: f64,
     _kvm: Kvm,
 }
-
 
 impl ForkedVm {
     pub fn fork_cow(snapshot: &VmSnapshot, memfd: i32) -> Result<Self> {
@@ -52,22 +51,27 @@ impl ForkedVm {
         {
             let mut irqchip = kvm_irqchip::default();
             irqchip.chip_id = KVM_IRQCHIP_IOAPIC;
-            vm_fd.get_irqchip(&mut irqchip)
+            vm_fd
+                .get_irqchip(&mut irqchip)
                 .map_err(|e| anyhow::anyhow!("get_irqchip(IOAPIC): {}", e))?;
             unsafe {
                 for i in 0..24 {
                     irqchip.chip.ioapic.redirtbl[i].bits = snapshot.ioapic_redirtbl[i];
                 }
             }
-            vm_fd.set_irqchip(&irqchip)
+            vm_fd
+                .set_irqchip(&irqchip)
                 .map_err(|e| anyhow::anyhow!("set_irqchip(IOAPIC): {}", e))?;
         }
 
         let fork_mem = unsafe {
             libc::mmap(
-                ptr::null_mut(), snapshot.mem_size,
+                ptr::null_mut(),
+                snapshot.mem_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_NORESERVE, memfd, 0,
+                libc::MAP_PRIVATE | libc::MAP_NORESERVE,
+                memfd,
+                0,
             )
         };
         if fork_mem == libc::MAP_FAILED {
@@ -76,9 +80,11 @@ impl ForkedVm {
 
         unsafe {
             vm_fd.set_user_memory_region(kvm_userspace_memory_region {
-                slot: 0, guest_phys_addr: 0,
+                slot: 0,
+                guest_phys_addr: 0,
                 memory_size: snapshot.mem_size as u64,
-                userspace_addr: fork_mem as u64, flags: 0,
+                userspace_addr: fork_mem as u64,
+                flags: 0,
             })?;
         }
 
@@ -101,12 +107,14 @@ impl ForkedVm {
 
         // Restore XCRS (must be after sregs — CR4.OSXSAVE must be set first)
         if snapshot.xcrs.nr_xcrs > 0 {
-            vcpu_fd.set_xcrs(&snapshot.xcrs)
+            vcpu_fd
+                .set_xcrs(&snapshot.xcrs)
                 .map_err(|e| anyhow::anyhow!("set_xcrs: {}", e))?;
         }
 
         // Restore XSAVE (FPU/SSE/AVX state — must be after XCRS)
-        vcpu_fd.set_xsave(&snapshot.xsave)
+        vcpu_fd
+            .set_xsave(&snapshot.xsave)
             .map_err(|e| anyhow::anyhow!("set_xsave: {}", e))?;
 
         vcpu_fd.set_regs(&snapshot.regs)?;
@@ -119,7 +127,9 @@ impl ForkedVm {
             let mut msrs = Msrs::new(snapshot.msrs.len()).unwrap();
             for (i, entry) in snapshot.msrs.iter().enumerate() {
                 let mut e = *entry;
-                if e.index == 0x4b564d00 { e.data |= 1; }
+                if e.index == 0x4b564d00 {
+                    e.data |= 1;
+                }
                 msrs.as_mut_slice()[i] = e;
             }
             let _ = vcpu_fd.set_msrs(&msrs);
@@ -129,16 +139,36 @@ impl ForkedVm {
         let _ = vcpu_fd.set_mp_state(kvm_mp_state { mp_state: 0 });
 
         Ok(Self {
-            _kvm: kvm, vm_fd, vcpu_fd,
-            mem_ptr: fork_mem as *mut u8, mem_size: snapshot.mem_size,
+            _kvm: kvm,
+            vm_fd,
+            vcpu_fd,
+            mem_ptr: fork_mem as *mut u8,
+            mem_size: snapshot.mem_size,
             serial: Serial::new(),
             fork_time_us: start.elapsed().as_secs_f64() * 1_000_000.0,
         })
     }
 
+    /// Queue fresh entropy into the serial input buffer. The guest init
+    /// processes __ENTROPY__ before user code (FIFO order in serial_readline).
+    pub fn queue_entropy(&mut self) -> Result<()> {
+        let mut seed = [0u8; 32];
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut f| f.read_exact(&mut seed))
+            .map_err(|e| anyhow::anyhow!("failed to read host entropy: {}", e))?;
+        let hex = bytes_to_hex(&seed);
+        let cmd = format!("__ENTROPY__{}\n", hex);
+        self.serial.queue_input(cmd.as_bytes());
+        Ok(())
+    }
+
     pub fn inject_serial_irq(&self) -> Result<()> {
-        self.vm_fd.set_irq_line(COM1_IRQ, true).map_err(|e| anyhow::anyhow!("{}", e))?;
-        self.vm_fd.set_irq_line(COM1_IRQ, false).map_err(|e| anyhow::anyhow!("{}", e))?;
+        self.vm_fd
+            .set_irq_line(COM1_IRQ, true)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        self.vm_fd
+            .set_irq_line(COM1_IRQ, false)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(())
     }
 
@@ -153,7 +183,12 @@ impl ForkedVm {
         self.run_until_marker_timeout(marker, max_exits, None)
     }
 
-    pub fn run_until_marker_timeout(&mut self, marker: &str, max_exits: u64, timeout: Option<Duration>) -> Result<String> {
+    pub fn run_until_marker_timeout(
+        &mut self,
+        marker: &str,
+        max_exits: u64,
+        timeout: Option<Duration>,
+    ) -> Result<String> {
         if self.serial.has_pending_input() {
             self.serial.set_ier_data_ready(true);
             let _ = self.inject_serial_irq();
@@ -178,7 +213,9 @@ impl ForkedVm {
             let thread_id = unsafe { libc::pthread_self() };
             let handle = std::thread::spawn(move || {
                 std::thread::sleep(dur);
-                unsafe { libc::pthread_kill(thread_id, libc::SIGALRM); }
+                unsafe {
+                    libc::pthread_kill(thread_id, libc::SIGALRM);
+                }
             });
             Some(handle)
         } else {
@@ -206,7 +243,9 @@ impl ForkedVm {
                             io_out_count += 1;
                             let offset = port - COM1_PORT;
                             let _thri_before = self.serial.thri_enabled();
-                            for &b in data { self.serial.write(offset, b); }
+                            for &b in data {
+                                self.serial.write(offset, b);
+                            }
                             // Level-triggered THRI: keep IRQ line asserted while
                             // THRI is enabled and de-assert when disabled. This
                             // matches real UART behavior where THRE interrupt
@@ -221,15 +260,30 @@ impl ForkedVm {
                             if debug && offset == 0 && exit_count < 5000 {
                                 let ch = data[0];
                                 if ch >= 0x20 && ch < 0x7f {
-                                    eprintln!("  [{}] IoOut chr='{}' out_len={}", exit_count, ch as char, self.serial.output.len());
+                                    eprintln!(
+                                        "  [{}] IoOut chr='{}' out_len={}",
+                                        exit_count,
+                                        ch as char,
+                                        self.serial.output.len()
+                                    );
                                 } else {
-                                    eprintln!("  [{}] IoOut byte=0x{:02x} out_len={}", exit_count, ch, self.serial.output.len());
+                                    eprintln!(
+                                        "  [{}] IoOut byte=0x{:02x} out_len={}",
+                                        exit_count,
+                                        ch,
+                                        self.serial.output.len()
+                                    );
                                 }
                             } else if debug && exit_count < 5000 {
-                                eprintln!("  [{}] IoOut reg={} val=0x{:02x}", exit_count, offset, data[0]);
+                                eprintln!(
+                                    "  [{}] IoOut reg={} val=0x{:02x}",
+                                    exit_count, offset, data[0]
+                                );
                             }
                             if String::from_utf8_lossy(&self.serial.output).contains(marker) {
-                                if debug { eprintln!("  MARKER FOUND at exit {}", exit_count); }
+                                if debug {
+                                    eprintln!("  MARKER FOUND at exit {}", exit_count);
+                                }
                                 return Ok(String::from_utf8_lossy(&self.serial.output).to_string());
                             }
                         }
@@ -245,9 +299,19 @@ impl ForkedVm {
                                 if offset == 0 {
                                     let ch = data[0];
                                     if ch >= 0x20 && ch < 0x7f {
-                                        eprintln!("  [{}] IoIn  RX chr='{}' pending={}", exit_count, ch as char, self.serial.input_len());
+                                        eprintln!(
+                                            "  [{}] IoIn  RX chr='{}' pending={}",
+                                            exit_count,
+                                            ch as char,
+                                            self.serial.input_len()
+                                        );
                                     } else {
-                                        eprintln!("  [{}] IoIn  RX byte=0x{:02x} pending={}", exit_count, ch, self.serial.input_len());
+                                        eprintln!(
+                                            "  [{}] IoIn  RX byte=0x{:02x} pending={}",
+                                            exit_count,
+                                            ch,
+                                            self.serial.input_len()
+                                        );
                                     }
                                 } else if offset == 2 {
                                     eprintln!("  [{}] IoIn  IIR=0x{:02x}", exit_count, data[0]);
@@ -261,24 +325,41 @@ impl ForkedVm {
                     }
                     VcpuExit::Hlt => {
                         hlt_count += 1;
-                        if debug { eprintln!("  [{}] HLT pending={}", exit_count, self.serial.has_pending_input()); }
+                        if debug {
+                            eprintln!(
+                                "  [{}] HLT pending={}",
+                                exit_count,
+                                self.serial.has_pending_input()
+                            );
+                        }
                         if self.serial.has_pending_input() {
                             let _ = self.inject_serial_irq();
                         } else {
-                            if debug { eprintln!("  DONE: exits={} io_in={} io_out={} hlt={}", exit_count, io_in_count, io_out_count, hlt_count); }
+                            if debug {
+                                eprintln!(
+                                    "  DONE: exits={} io_in={} io_out={} hlt={}",
+                                    exit_count, io_in_count, io_out_count, hlt_count
+                                );
+                            }
                             return Ok(String::from_utf8_lossy(&self.serial.output).to_string());
                         }
                     }
                     VcpuExit::Shutdown => {
                         return Ok(String::from_utf8_lossy(&self.serial.output).to_string());
                     }
-                    VcpuExit::MmioRead(_, data) => { for b in data.iter_mut() { *b = 0xff; } }
+                    VcpuExit::MmioRead(_, data) => {
+                        for b in data.iter_mut() {
+                            *b = 0xff;
+                        }
+                    }
                     VcpuExit::MmioWrite(_, _) => {}
                     VcpuExit::InternalError => bail!("KVM internal error"),
                     _ => {}
                 },
                 Err(e) => {
-                    if e.errno() == libc::EAGAIN { continue; }
+                    if e.errno() == libc::EAGAIN {
+                        continue;
+                    }
                     if e.errno() == libc::EINTR {
                         // Signal interrupted KVM_RUN — check if we've timed out
                         if let Some(dl) = deadline {
@@ -298,24 +379,48 @@ impl ForkedVm {
 
 impl Drop for ForkedVm {
     fn drop(&mut self) {
-        unsafe { libc::munmap(self.mem_ptr as *mut libc::c_void, self.mem_size); }
+        unsafe {
+            libc::munmap(self.mem_ptr as *mut libc::c_void, self.mem_size);
+        }
     }
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
 }
 
 pub fn create_snapshot_memfd(mem_ptr: *const u8, mem_size: usize) -> Result<i32> {
     let name = std::ffi::CString::new("zeroboot-snapshot").unwrap();
     let fd = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
-    if fd < 0 { bail!("memfd_create failed"); }
+    if fd < 0 {
+        bail!("memfd_create failed");
+    }
     if unsafe { libc::ftruncate(fd, mem_size as i64) } < 0 {
-        unsafe { libc::close(fd); }
+        unsafe {
+            libc::close(fd);
+        }
         bail!("ftruncate failed");
     }
     let dst = unsafe {
-        libc::mmap(ptr::null_mut(), mem_size, libc::PROT_READ | libc::PROT_WRITE,
-            libc::MAP_SHARED, fd, 0)
+        libc::mmap(
+            ptr::null_mut(),
+            mem_size,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            fd,
+            0,
+        )
     };
     if dst == libc::MAP_FAILED {
-        unsafe { libc::close(fd); }
+        unsafe {
+            libc::close(fd);
+        }
         bail!("mmap failed");
     }
     unsafe {

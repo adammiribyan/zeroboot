@@ -96,6 +96,11 @@ Returns template status and readiness.
 
 Returns Prometheus-format metrics including fork time histograms, exec time histograms, request counts, and error rates.
 
+Entropy counters:
+
+- `zeroboot_entropy_reseed_total{result="ok"}`: Forks where the kernel CRNG was reseeded with fresh host entropy.
+- `zeroboot_entropy_reseed_total{result="failure"}`: Forks where entropy injection failed (e.g., `/dev/urandom` unavailable on host).
+
 ## Authentication
 
 Place API keys in `api_keys.json` (or set `ZEROBOOT_API_KEYS_FILE` env var):

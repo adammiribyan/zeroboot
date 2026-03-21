@@ -29,10 +29,6 @@ curl -X POST https://api.zeroboot.dev/v1/exec \
   -d '{"code":"import numpy as np; print(np.random.rand(3))"}'
 ```
 
-## Early access
-
-We're building the managed service. Sign up for early access: https://tally.so/r/aQGkpb
-
 ## Benchmarks
 
 | Metric | Zeroboot | E2B | microsandbox | Daytona |
@@ -82,6 +78,17 @@ const result = await new Sandbox("zb_live_your_key").run("console.log(1+1)");
 ## Status
 
 Working prototype. The fork primitive, benchmarks, and API are real, but not production-hardened yet. [Open an issue](https://github.com/adammiribyan/zeroboot/issues) if you're interested.
+
+## Self-host or managed
+
+Self-host on any Linux box with KVM, or use the managed API. Building the managed service now — [sign up for early access](https://tally.so/r/aQGkpb).
+
+## Known limitations
+
+- **Entropy**: kernel CRNG, `random`, and `numpy.random` are reseeded per fork. OpenSSL and ASLR are not. See [Architecture](docs/ARCHITECTURE.md#entropy-in-guests).
+- **Single vCPU** per fork. No networking inside forks.
+- **No disk** in forked VMs. All code must be pre-loaded in the snapshot.
+- Template changes require a full re-snapshot (~15s).
 
 ## License
 

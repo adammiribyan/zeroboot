@@ -72,12 +72,12 @@ Firecracker's vmstate is a binary blob with variable-length versionize sections.
 
 ### Entropy in Guests
 
-`getrandom()` blocks in Firecracker VMs until the CRNG is initialized. Guest init scripts must seed entropy via the `RNDADDENTROPY` ioctl and pass `random.trust_cpu=on` as a kernel boot argument. The Node.js template uses a Python wrapper as PID 1 to handle entropy seeding before exec'ing node.
+Forked VMs inherit the snapshot's CRNG and PRNG state. Without reseeding, all forks produce identical "random" output.
 
-### Numpy SIMD Dispatch
+Before sending user code, the host queues 32 fresh bytes from `/dev/urandom` as an `__ENTROPY__<hex>` serial command. The guest init processes this first (FIFO order), reseeding the kernel CRNG (`RNDADDENTROPY` + `RNDRESEEDCRNG`), Python's `random` module, and `numpy.random`. This ensures `os.urandom()`, `random.random()`, and `numpy.random.random()` produce distinct values across clones.
 
-Firecracker's CPUID filtering confuses numpy's runtime CPU feature detection. Set `NPY_DISABLE_CPU_FEATURES` in the guest init before importing numpy to avoid SIGILL crashes.
+**Not reseeded:** OpenSSL internal state (`ssl.RAND_bytes()`). Use `os.urandom()` for cryptographic randomness. ASLR layout is shared across clones (inherent to snapshot-restore). See [Firecracker's guidance](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/random-for-clones.md).
 
-### IOAPIC Restore Pattern
+### No Disk Access in Forks
 
-Don't zero-init `kvm_irqchip`. Use `KVM_GET_IRQCHIP` first, then overwrite the redirect table entries from the snapshot, then `KVM_SET_IRQCHIP`. Zero-initializing corrupts other irqchip state and causes interrupt routing failures.
+Forked VMs have no virtio-blk device. All code, modules, and data must be in the page cache at snapshot time. Lazy imports that load `.so` files from disk will hang. Guest init scripts warm up all needed code paths before signaling `READY`.

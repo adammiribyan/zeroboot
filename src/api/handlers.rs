@@ -1,9 +1,9 @@
 use axum::extract::{ConnectInfo, Json, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -21,8 +21,12 @@ pub struct ExecRequest {
     pub timeout_seconds: u64,
 }
 
-fn default_language() -> String { "python".to_string() }
-fn default_timeout() -> u64 { 30 }
+fn default_language() -> String {
+    "python".to_string()
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 #[derive(Serialize)]
 pub struct ExecResponse {
@@ -69,7 +73,7 @@ pub struct ErrorResponse {
 pub struct TokenBucket {
     tokens: f64,
     last_refill: Instant,
-    rate: f64,    // tokens per second
+    rate: f64, // tokens per second
     capacity: f64,
 }
 
@@ -79,14 +83,24 @@ impl TokenBucket {
         Self::with_capacity(rate, rate.max(1.0))
     }
     fn with_capacity(rate: f64, capacity: f64) -> Self {
-        Self { tokens: capacity, last_refill: Instant::now(), rate, capacity }
+        Self {
+            tokens: capacity,
+            last_refill: Instant::now(),
+            rate,
+            capacity,
+        }
     }
     fn try_consume(&mut self) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
         self.tokens = (self.tokens + elapsed * self.rate).min(self.capacity);
         self.last_refill = now;
-        if self.tokens >= 1.0 { self.tokens -= 1.0; true } else { false }
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -105,7 +119,9 @@ pub struct AppState {
 }
 
 // Prometheus histogram with fixed bucket boundaries (in milliseconds).
-const HISTOGRAM_BUCKETS_MS: &[f64] = &[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0];
+const HISTOGRAM_BUCKETS_MS: &[f64] = &[
+    0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0,
+];
 const NUM_BUCKETS: usize = 13; // must match HISTOGRAM_BUCKETS_MS.len()
 
 pub struct Histogram {
@@ -127,26 +143,27 @@ impl Histogram {
     /// Record a value in milliseconds.
     fn observe(&self, value_ms: f64) {
         // Place into the first bucket where value <= bound, or +Inf overflow
-        let slot = HISTOGRAM_BUCKETS_MS.iter()
+        let slot = HISTOGRAM_BUCKETS_MS
+            .iter()
             .position(|&bound| value_ms <= bound)
             .unwrap_or(NUM_BUCKETS);
         self.buckets[slot].fetch_add(1, Ordering::Relaxed);
-        self.sum_us.fetch_add((value_ms * 1000.0) as u64, Ordering::Relaxed);
+        self.sum_us
+            .fetch_add((value_ms * 1000.0) as u64, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Render as Prometheus histogram text. `name` is the metric base name (e.g. "zeroboot_fork_time_milliseconds").
     fn render(&self, name: &str, help: &str) -> String {
-        let mut out = format!(
-            "# HELP {} {}\n# TYPE {} histogram\n",
-            name, help, name
-        );
+        let mut out = format!("# HELP {} {}\n# TYPE {} histogram\n", name, help, name);
         let mut cumulative = 0u64;
         for (i, &bound) in HISTOGRAM_BUCKETS_MS.iter().enumerate() {
             cumulative += self.buckets[i].load(Ordering::Relaxed);
             out.push_str(&format!(
                 "{}_bucket{{le=\"{}\"}} {}\n",
-                name, format_bucket(bound), cumulative
+                name,
+                format_bucket(bound),
+                cumulative
             ));
         }
         cumulative += self.buckets[NUM_BUCKETS].load(Ordering::Relaxed);
@@ -160,13 +177,19 @@ impl Histogram {
 }
 
 fn format_bucket(v: f64) -> String {
-    if v == v.floor() { format!("{}", v as u64) } else { format!("{}", v) }
+    if v == v.floor() {
+        format!("{}", v as u64)
+    } else {
+        format!("{}", v)
+    }
 }
 
 pub struct Metrics {
     pub total_executions: AtomicU64,
     pub total_errors: AtomicU64,
     pub total_timeouts: AtomicU64,
+    pub entropy_reseed_ok: AtomicU64,
+    pub entropy_reseed_failures: AtomicU64,
     pub concurrent_forks: AtomicU64,
     pub fork_time_sum_us: AtomicU64,
     pub exec_time_sum_us: AtomicU64,
@@ -181,6 +204,8 @@ impl Metrics {
             total_executions: AtomicU64::new(0),
             total_errors: AtomicU64::new(0),
             total_timeouts: AtomicU64::new(0),
+            entropy_reseed_ok: AtomicU64::new(0),
+            entropy_reseed_failures: AtomicU64::new(0),
             concurrent_forks: AtomicU64::new(0),
             fork_time_sum_us: AtomicU64::new(0),
             exec_time_sum_us: AtomicU64::new(0),
@@ -191,50 +216,75 @@ impl Metrics {
     }
 }
 
-
 // --- Auth helper ---
 
 fn extract_api_key(headers: &HeaderMap) -> Option<String> {
-    headers.get("authorization")
+    headers
+        .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(|s| s.to_string())
 }
 
-fn check_auth(state: &AppState, headers: &HeaderMap) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+fn check_auth(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
     if state.api_keys.is_empty() {
         return Ok("anonymous".to_string());
     }
     match extract_api_key(headers) {
         Some(key) if state.api_keys.contains(&key) => Ok(key),
-        Some(_) => Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse {
-            error: "Invalid API key".to_string(), request_id: None,
-        }))),
-        None => Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse {
-            error: "Missing Authorization header".to_string(), request_id: None,
-        }))),
+        Some(_) => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Invalid API key".to_string(),
+                request_id: None,
+            }),
+        )),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Missing Authorization header".to_string(),
+                request_id: None,
+            }),
+        )),
     }
 }
 
 fn extract_client_ip(headers: &HeaderMap, addr: SocketAddr) -> String {
     // CF-Connecting-IP (set by Cloudflare)
-    if let Some(v) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+    if let Some(v) = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+    {
         let ip = v.trim();
-        if !ip.is_empty() { return ip.to_string(); }
+        if !ip.is_empty() {
+            return ip.to_string();
+        }
     }
     // X-Forwarded-For (first IP in the chain is the real client)
     if let Some(v) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         if let Some(first) = v.split(',').next() {
             let ip = first.trim();
-            if !ip.is_empty() { return ip.to_string(); }
+            if !ip.is_empty() {
+                return ip.to_string();
+            }
         }
     }
     // Fall back to socket address
     addr.ip().to_string()
 }
 
-fn check_rate_limit(state: &AppState, key: &str, headers: &HeaderMap, addr: SocketAddr) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    if state.api_keys.is_empty() { return Ok(()); }
+fn check_rate_limit(
+    state: &AppState,
+    key: &str,
+    headers: &HeaderMap,
+    addr: SocketAddr,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if state.api_keys.is_empty() {
+        return Ok(());
+    }
     let is_demo = key.starts_with("zb_demo_");
     let (bucket_key, rate, capacity) = if is_demo {
         let ip = extract_client_ip(headers, addr);
@@ -243,16 +293,24 @@ fn check_rate_limit(state: &AppState, key: &str, headers: &HeaderMap, addr: Sock
         (key.to_string(), 100.0, 100.0)
     };
     let mut limiters = state.rate_limiters.lock().unwrap();
-    let bucket = limiters.entry(bucket_key).or_insert_with(|| TokenBucket::with_capacity(rate, capacity));
-    if bucket.try_consume() { Ok(()) } else {
+    let bucket = limiters
+        .entry(bucket_key)
+        .or_insert_with(|| TokenBucket::with_capacity(rate, capacity));
+    if bucket.try_consume() {
+        Ok(())
+    } else {
         let msg = if is_demo {
             "Rate limit exceeded (10 req/min for demo keys)"
         } else {
             "Rate limit exceeded (100 req/s)"
         };
-        Err((StatusCode::TOO_MANY_REQUESTS, Json(ErrorResponse {
-            error: msg.to_string(), request_id: None,
-        })))
+        Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: msg.to_string(),
+                request_id: None,
+            }),
+        ))
     }
 }
 
@@ -261,7 +319,9 @@ fn check_rate_limit(state: &AppState, key: &str, headers: &HeaderMap, addr: Sock
 const REQUEST_LOG_PATH: &str = "/var/log/zeroboot/requests.jsonl";
 
 fn iso_now() -> String {
-    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
+    let d = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
     let secs = d.as_secs();
     let millis = d.subsec_millis();
     // Compute UTC date/time from epoch seconds
@@ -281,10 +341,20 @@ fn iso_now() -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let mo = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if mo <= 2 { y + 1 } else { y };
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", y, mo, d, h, m, s, millis)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        y, mo, d, h, m, s, millis
+    )
 }
 
-fn log_request(request_id: &str, client_ip: &str, api_key_masked: &str, language: &str, code: &str, response: &ExecResponse) {
+fn log_request(
+    request_id: &str,
+    client_ip: &str,
+    api_key_masked: &str,
+    language: &str,
+    code: &str,
+    response: &ExecResponse,
+) {
     use std::io::Write;
     let line = serde_json::json!({
         "ts": iso_now(),
@@ -298,29 +368,45 @@ fn log_request(request_id: &str, client_ip: &str, api_key_masked: &str, language
         "exec_time_ms": response.exec_time_ms,
         "total_time_ms": response.total_time_ms,
     });
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(REQUEST_LOG_PATH) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(REQUEST_LOG_PATH)
+    {
         let _ = writeln!(f, "{}", line);
     }
 }
 
 // --- Exec helper ---
 
-fn round2(v: f64) -> f64 { (v * 100.0).round() / 100.0 }
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
 
 fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecResponse {
     let total_start = Instant::now();
-    state.metrics.concurrent_forks.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .concurrent_forks
+        .fetch_add(1, Ordering::Relaxed);
 
     let result = (|| -> ExecResponse {
-        let lang = if req.language == "node" || req.language == "javascript" { "node" } else { "python" };
+        let lang = if req.language == "node" || req.language == "javascript" {
+            "node"
+        } else {
+            "python"
+        };
         let template = match state.templates.get(lang) {
             Some(t) => t,
             None => {
                 state.metrics.total_errors.fetch_add(1, Ordering::Relaxed);
                 return ExecResponse {
-                    id: request_id.to_string(), stdout: String::new(),
-                    stderr: format!("No template for language: {}", req.language), exit_code: -1,
-                    fork_time_ms: 0.0, exec_time_ms: 0.0,
+                    id: request_id.to_string(),
+                    stdout: String::new(),
+                    stderr: format!("No template for language: {}", req.language),
+                    exit_code: -1,
+                    fork_time_ms: 0.0,
+                    exec_time_ms: 0.0,
                     total_time_ms: round2(total_start.elapsed().as_secs_f64() * 1000.0),
                 };
             }
@@ -330,25 +416,54 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
             Err(e) => {
                 state.metrics.total_errors.fetch_add(1, Ordering::Relaxed);
                 return ExecResponse {
-                    id: request_id.to_string(), stdout: String::new(),
-                    stderr: format!("Fork failed: {}", e), exit_code: -1,
-                    fork_time_ms: 0.0, exec_time_ms: 0.0,
+                    id: request_id.to_string(),
+                    stdout: String::new(),
+                    stderr: format!("Fork failed: {}", e),
+                    exit_code: -1,
+                    fork_time_ms: 0.0,
+                    exec_time_ms: 0.0,
                     total_time_ms: round2(total_start.elapsed().as_secs_f64() * 1000.0),
                 };
             }
         };
         let fork_time_ms = round2(vm.fork_time_us / 1000.0);
-        state.metrics.fork_time_sum_us.fetch_add(vm.fork_time_us as u64, Ordering::Relaxed);
-        state.metrics.fork_time_hist.observe(vm.fork_time_us / 1000.0);
+        state
+            .metrics
+            .fork_time_sum_us
+            .fetch_add(vm.fork_time_us as u64, Ordering::Relaxed);
+        state
+            .metrics
+            .fork_time_hist
+            .observe(vm.fork_time_us / 1000.0);
+
+        // Queue entropy into serial buffer BEFORE user code. Guest init
+        // processes __ENTROPY__ first (reseeds kernel + userspace PRNGs),
+        // then processes user code. FIFO serial order guarantees reseed
+        // happens before any user code executes.
+        if let Err(e) = vm.queue_entropy() {
+            state
+                .metrics
+                .entropy_reseed_failures
+                .fetch_add(1, Ordering::Relaxed);
+            eprintln!("[{}] entropy queue failed: {}", request_id, e);
+        } else {
+            state
+                .metrics
+                .entropy_reseed_ok
+                .fetch_add(1, Ordering::Relaxed);
+        }
 
         let exec_start = Instant::now();
         let command = format!("{}\n", req.code);
         if let Err(e) = vm.send_serial(command.as_bytes()) {
             state.metrics.total_errors.fetch_add(1, Ordering::Relaxed);
             return ExecResponse {
-                id: request_id.to_string(), stdout: String::new(),
-                stderr: format!("Send failed: {}", e), exit_code: -1,
-                fork_time_ms, exec_time_ms: 0.0,
+                id: request_id.to_string(),
+                stdout: String::new(),
+                stderr: format!("Send failed: {}", e),
+                exit_code: -1,
+                fork_time_ms,
+                exec_time_ms: 0.0,
                 total_time_ms: round2(total_start.elapsed().as_secs_f64() * 1000.0),
             };
         }
@@ -358,9 +473,18 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
         let result = vm.run_until_marker_timeout("ZEROBOOT_DONE", u64::MAX, Some(timeout));
 
         let exec_time_ms = round2(exec_start.elapsed().as_secs_f64() * 1000.0);
-        state.metrics.exec_time_sum_us.fetch_add((exec_time_ms * 1000.0) as u64, Ordering::Relaxed);
-        state.metrics.exec_time_hist.observe(exec_start.elapsed().as_secs_f64() * 1000.0);
-        state.metrics.total_executions.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .exec_time_sum_us
+            .fetch_add((exec_time_ms * 1000.0) as u64, Ordering::Relaxed);
+        state
+            .metrics
+            .exec_time_hist
+            .observe(exec_start.elapsed().as_secs_f64() * 1000.0);
+        state
+            .metrics
+            .total_executions
+            .fetch_add(1, Ordering::Relaxed);
 
         let (output, timed_out) = match result {
             Ok(s) => (s, false),
@@ -382,17 +506,28 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
                 stdout: String::new(),
                 stderr: format!("Execution timed out after {}s", timeout_secs),
                 exit_code: -1,
-                fork_time_ms, exec_time_ms,
+                fork_time_ms,
+                exec_time_ms,
                 total_time_ms: round2(total_start.elapsed().as_secs_f64() * 1000.0),
             };
         }
 
         let has_marker = output.contains("ZEROBOOT_DONE");
-        let mut stdout = output.replace("ZEROBOOT_DONE", "").replace("\r\n", "\n").replace("\r", "");
-        if let Some(pos) = stdout.find('\n') {
-            if stdout[..pos].trim() == req.code.trim() {
-                stdout = stdout[pos+1..].to_string();
-            }
+        let mut stdout = output
+            .replace("ZEROBOOT_DONE", "")
+            .replace("\r\n", "\n")
+            .replace("\r", "");
+        // Strip echoed lines: tty echoes both __ENTROPY__ and user code.
+        let lines: Vec<&str> = stdout.splitn(4, '\n').collect();
+        let skip = lines
+            .iter()
+            .take_while(|l| {
+                let t = l.trim();
+                t.starts_with("__ENTROPY__") || t == req.code.trim()
+            })
+            .count();
+        if skip > 0 {
+            stdout = lines[skip..].join("\n");
         }
 
         let (exit_code, stderr) = if has_marker {
@@ -407,13 +542,17 @@ fn execute_code(state: &AppState, req: &ExecRequest, request_id: &str) -> ExecRe
             stdout: stdout.trim().to_string(),
             stderr,
             exit_code,
-            fork_time_ms, exec_time_ms,
+            fork_time_ms,
+            exec_time_ms,
             total_time_ms: round2(total_start.elapsed().as_secs_f64() * 1000.0),
         }
     })();
 
     state.metrics.total_time_hist.observe(result.total_time_ms);
-    state.metrics.concurrent_forks.fetch_sub(1, Ordering::Relaxed);
+    state
+        .metrics
+        .concurrent_forks
+        .fetch_sub(1, Ordering::Relaxed);
     result
 }
 
@@ -438,13 +577,24 @@ pub async fn exec_handler(
     let client_ip = extract_client_ip(&headers, addr);
     let language = req.language.clone();
     let code_snippet: String = req.code.chars().take(500).collect();
-    let masked_key = if api_key.len() > 8 { format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..]) } else { "***".to_string() };
+    let masked_key = if api_key.len() > 8 {
+        format!("{}...{}", &api_key[..4], &api_key[api_key.len() - 4..])
+    } else {
+        "***".to_string()
+    };
 
-    let response = tokio::task::spawn_blocking(move || {
-        execute_code(&state, &req, &rid)
-    }).await.unwrap();
+    let response = tokio::task::spawn_blocking(move || execute_code(&state, &req, &rid))
+        .await
+        .unwrap();
 
-    log_request(&request_id, &client_ip, &masked_key, &language, &code_snippet, &response);
+    log_request(
+        &request_id,
+        &client_ip,
+        &masked_key,
+        &language,
+        &code_snippet,
+        &response,
+    );
 
     (StatusCode::OK, Json(response)).into_response()
 }
@@ -464,7 +614,11 @@ pub async fn batch_handler(
     }
 
     let client_ip = extract_client_ip(&headers, addr);
-    let masked_key = if api_key.len() > 8 { format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..]) } else { "***".to_string() };
+    let masked_key = if api_key.len() > 8 {
+        format!("{}...{}", &api_key[..4], &api_key[api_key.len() - 4..])
+    } else {
+        "***".to_string()
+    };
 
     let mut snippets = Vec::with_capacity(req.executions.len());
     let mut languages = Vec::with_capacity(req.executions.len());
@@ -484,33 +638,44 @@ pub async fn batch_handler(
     let mut results = Vec::with_capacity(handles.len());
     for (i, h) in handles.into_iter().enumerate() {
         let response = h.await.unwrap();
-        log_request(&request_ids[i], &client_ip, &masked_key, &languages[i], &snippets[i], &response);
+        log_request(
+            &request_ids[i],
+            &client_ip,
+            &masked_key,
+            &languages[i],
+            &snippets[i],
+            &response,
+        );
         results.push(response);
     }
 
     (StatusCode::OK, Json(BatchResponse { results })).into_response()
 }
 
-pub async fn health_handler(
-    State(state): State<Arc<AppState>>,
-) -> Json<HealthResponse> {
+pub async fn health_handler(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     let mut templates = HashMap::new();
     for (name, _) in &state.templates {
-        templates.insert(name.clone(), TemplateStatus {
-            ready: true,
-            numpy: name == "python",
-        });
+        templates.insert(
+            name.clone(),
+            TemplateStatus {
+                ready: true,
+                numpy: name == "python",
+            },
+        );
     }
-    Json(HealthResponse { status: "ok".to_string(), templates })
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        templates,
+    })
 }
 
-pub async fn metrics_handler(
-    State(state): State<Arc<AppState>>,
-) -> String {
+pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> String {
     let m = &state.metrics;
     let total = m.total_executions.load(Ordering::Relaxed);
     let errors = m.total_errors.load(Ordering::Relaxed);
     let timeouts = m.total_timeouts.load(Ordering::Relaxed);
+    let entropy_ok = m.entropy_reseed_ok.load(Ordering::Relaxed);
+    let entropy_fail = m.entropy_reseed_failures.load(Ordering::Relaxed);
     let concurrent = m.concurrent_forks.load(Ordering::Relaxed);
     let fork_sum = m.fork_time_sum_us.load(Ordering::Relaxed);
     let exec_sum = m.exec_time_sum_us.load(Ordering::Relaxed);
@@ -530,11 +695,21 @@ pub async fn metrics_handler(
          # HELP zeroboot_exec_time_microseconds_total Sum of exec times\n\
          # TYPE zeroboot_exec_time_microseconds_total counter\n\
          zeroboot_exec_time_microseconds_total {}\n\
+         # HELP zeroboot_entropy_reseed_total Per-fork kernel CRNG reseed results\n\
+         # TYPE zeroboot_entropy_reseed_total counter\n\
+         zeroboot_entropy_reseed_total{{result=\"ok\"}} {}\n\
+         zeroboot_entropy_reseed_total{{result=\"failure\"}} {}\n\
          # HELP zeroboot_memory_usage_bytes RSS memory usage\n\
          # TYPE zeroboot_memory_usage_bytes gauge\n\
          zeroboot_memory_usage_bytes {}\n",
-        total.saturating_sub(errors).saturating_sub(timeouts), errors, timeouts,
-        concurrent, fork_sum, exec_sum,
+        total.saturating_sub(errors).saturating_sub(timeouts),
+        errors,
+        timeouts,
+        concurrent,
+        fork_sum,
+        exec_sum,
+        entropy_ok,
+        entropy_fail,
         get_rss_bytes(),
     );
 
@@ -558,8 +733,12 @@ fn get_rss_bytes() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
-            s.lines().find(|l| l.starts_with("VmRSS:"))
-                .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+            s.lines().find(|l| l.starts_with("VmRSS:")).and_then(|l| {
+                l.split_whitespace()
+                    .nth(1)
+                    .and_then(|v| v.parse::<u64>().ok())
+            })
         })
-        .unwrap_or(0) * 1024
+        .unwrap_or(0)
+        * 1024
 }

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use kvm_bindings::*;
 
 // Reference offsets for Firecracker v1.12.0, 1 vCPU, x86_64.
@@ -71,24 +71,55 @@ pub fn parse_vmstate(data: &[u8]) -> Result<ParsedVmState> {
     })
 }
 
-fn r64(d:&[u8],o:usize)->u64{u64::from_le_bytes(d[o..o+8].try_into().unwrap())}
-fn r32(d:&[u8],o:usize)->u32{u32::from_le_bytes(d[o..o+4].try_into().unwrap())}
-fn r16(d:&[u8],o:usize)->u16{u16::from_le_bytes(d[o..o+2].try_into().unwrap())}
+fn r64(d: &[u8], o: usize) -> u64 {
+    u64::from_le_bytes(d[o..o + 8].try_into().unwrap())
+}
+fn r32(d: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes(d[o..o + 4].try_into().unwrap())
+}
+fn r16(d: &[u8], o: usize) -> u16 {
+    u16::from_le_bytes(d[o..o + 2].try_into().unwrap())
+}
 
 fn parse_regs(d: &[u8], o: usize) -> kvm_regs {
     kvm_regs {
-        rax:r64(d,o),rbx:r64(d,o+8),rcx:r64(d,o+16),rdx:r64(d,o+24),
-        rsi:r64(d,o+32),rdi:r64(d,o+40),rsp:r64(d,o+48),rbp:r64(d,o+56),
-        r8:r64(d,o+64),r9:r64(d,o+72),r10:r64(d,o+80),r11:r64(d,o+88),
-        r12:r64(d,o+96),r13:r64(d,o+104),r14:r64(d,o+112),r15:r64(d,o+120),
-        rip:r64(d,o+128),rflags:r64(d,o+136),
+        rax: r64(d, o),
+        rbx: r64(d, o + 8),
+        rcx: r64(d, o + 16),
+        rdx: r64(d, o + 24),
+        rsi: r64(d, o + 32),
+        rdi: r64(d, o + 40),
+        rsp: r64(d, o + 48),
+        rbp: r64(d, o + 56),
+        r8: r64(d, o + 64),
+        r9: r64(d, o + 72),
+        r10: r64(d, o + 80),
+        r11: r64(d, o + 88),
+        r12: r64(d, o + 96),
+        r13: r64(d, o + 104),
+        r14: r64(d, o + 112),
+        r15: r64(d, o + 120),
+        rip: r64(d, o + 128),
+        rflags: r64(d, o + 136),
     }
 }
 
-fn parse_seg(d:&[u8],o:usize)->kvm_segment{
-    kvm_segment{base:r64(d,o),limit:r32(d,o+8),selector:r16(d,o+12),
-        type_:d[o+14],present:d[o+15],dpl:d[o+16],db:d[o+17],
-        s:d[o+18],l:d[o+19],g:d[o+20],avl:d[o+21],unusable:d[o+22],padding:d[o+23]}
+fn parse_seg(d: &[u8], o: usize) -> kvm_segment {
+    kvm_segment {
+        base: r64(d, o),
+        limit: r32(d, o + 8),
+        selector: r16(d, o + 12),
+        type_: d[o + 14],
+        present: d[o + 15],
+        dpl: d[o + 16],
+        db: d[o + 17],
+        s: d[o + 18],
+        l: d[o + 19],
+        g: d[o + 20],
+        avl: d[o + 21],
+        unusable: d[o + 22],
+        padding: d[o + 23],
+    }
 }
 
 fn parse_sregs(d: &[u8], shift: isize) -> kvm_sregs {
@@ -100,21 +131,38 @@ fn parse_sregs(d: &[u8], shift: isize) -> kvm_sregs {
     let apic_base = adj(REF_APIC_BASE, shift);
 
     let mut s = kvm_sregs::default();
-    s.cs=parse_seg(d,segs); s.ds=parse_seg(d,segs+24);
-    s.es=parse_seg(d,segs+48); s.fs=parse_seg(d,segs+72);
-    s.gs=parse_seg(d,segs+96); s.ss=parse_seg(d,segs+120);
-    s.tr=parse_seg(d,segs+144); s.ldt=parse_seg(d,segs+168);
-    s.gdt=kvm_dtable{base:r64(d,gdt),limit:r16(d,gdt+8),padding:[0;3]};
-    s.idt=kvm_dtable{base:r64(d,idt),limit:r16(d,idt+8),padding:[0;3]};
-    s.cr0=r64(d,cr); s.cr2=r64(d,cr+8);
-    s.cr3=r64(d,cr+16); s.cr4=r64(d,cr+24);
-    s.efer=r64(d,efer); s.apic_base=r64(d,apic_base);
+    s.cs = parse_seg(d, segs);
+    s.ds = parse_seg(d, segs + 24);
+    s.es = parse_seg(d, segs + 48);
+    s.fs = parse_seg(d, segs + 72);
+    s.gs = parse_seg(d, segs + 96);
+    s.ss = parse_seg(d, segs + 120);
+    s.tr = parse_seg(d, segs + 144);
+    s.ldt = parse_seg(d, segs + 168);
+    s.gdt = kvm_dtable {
+        base: r64(d, gdt),
+        limit: r16(d, gdt + 8),
+        padding: [0; 3],
+    };
+    s.idt = kvm_dtable {
+        base: r64(d, idt),
+        limit: r16(d, idt + 8),
+        padding: [0; 3],
+    };
+    s.cr0 = r64(d, cr);
+    s.cr2 = r64(d, cr + 8);
+    s.cr3 = r64(d, cr + 16);
+    s.cr4 = r64(d, cr + 24);
+    s.efer = r64(d, efer);
+    s.apic_base = r64(d, apic_base);
     s
 }
 
 fn parse_lapic(d: &[u8], o: usize) -> kvm_lapic_state {
     let mut l = kvm_lapic_state::default();
-    for i in 0..1024 { l.regs[i] = d[o+i] as i8; }
+    for i in 0..1024 {
+        l.regs[i] = d[o + i] as i8;
+    }
     l
 }
 
@@ -155,9 +203,8 @@ fn parse_xsave(d: &[u8], o: usize) -> kvm_xsave {
     if size > 0 {
         let src = &d[o..o + size];
         for i in 0..size / 4 {
-            xsave.region[i] = u32::from_le_bytes([
-                src[i*4], src[i*4+1], src[i*4+2], src[i*4+3]
-            ]);
+            xsave.region[i] =
+                u32::from_le_bytes([src[i * 4], src[i * 4 + 1], src[i * 4 + 2], src[i * 4 + 3]]);
         }
     }
     xsave
@@ -178,28 +225,48 @@ fn parse_cpuid(data: &[u8]) -> Vec<kvm_cpuid_entry2> {
     let genu = b"Genu"; // GenuineIntel
 
     for i in 0..data.len().saturating_sub(ENTRY_SIZE) {
-        if r64(data, i) != HEADER_VAL { continue; }
-        if r32(data, i + 8) != 0 { continue; }  // function == 0
-        if r32(data, i + 12) != 0 { continue; } // index == 0
-        // Check vendor string in ebx (offset 24 from entry start)
-        if i + 28 > data.len() { continue; }
+        if r64(data, i) != HEADER_VAL {
+            continue;
+        }
+        if r32(data, i + 8) != 0 {
+            continue;
+        } // function == 0
+        if r32(data, i + 12) != 0 {
+            continue;
+        } // index == 0
+          // Check vendor string in ebx (offset 24 from entry start)
+        if i + 28 > data.len() {
+            continue;
+        }
         let ebx_bytes = &data[i + 24..i + 28];
-        if ebx_bytes != auth && ebx_bytes != genu { continue; }
+        if ebx_bytes != auth && ebx_bytes != genu {
+            continue;
+        }
 
         // Found CPUID leaf 0 at offset i. Read the count from 16 bytes before.
-        if i < 16 { continue; }
+        if i < 16 {
+            continue;
+        }
         let count = r64(data, i - 16) as usize;
-        if count == 0 || count > 256 { continue; }
+        if count == 0 || count > 256 {
+            continue;
+        }
         // Validate: capacity should match count (or be >= count)
         let capacity = r64(data, i - 8) as usize;
-        if capacity < count || capacity > 256 { continue; }
+        if capacity < count || capacity > 256 {
+            continue;
+        }
 
         let mut entries = Vec::with_capacity(count);
         for j in 0..count {
             let off = i + j * ENTRY_SIZE;
-            if off + ENTRY_SIZE > data.len() { break; }
+            if off + ENTRY_SIZE > data.len() {
+                break;
+            }
             // Verify header
-            if r64(data, off) != HEADER_VAL { break; }
+            if r64(data, off) != HEADER_VAL {
+                break;
+            }
             entries.push(kvm_cpuid_entry2 {
                 function: r32(data, off + 8),
                 index: r32(data, off + 12),
@@ -221,19 +288,36 @@ fn parse_cpuid(data: &[u8]) -> Vec<kvm_cpuid_entry2> {
 }
 
 fn parse_msrs(data: &[u8]) -> Vec<kvm_msr_entry> {
-    let targets: &[(u32,fn(u64)->bool)] = &[
-        (0xc0000081,|v|v!=0),(0xc0000082,|v|v>0xffffffff80000000||v==0),
-        (0xc0000083,|v|v>0xffffffff80000000||v==0),(0xc0000084,|_|true),
-        (0xc0000102,|_|true),
-        (0x4b564d00,|v|v!=0&&v<0x100000000),(0x4b564d01,|v|v!=0&&v<0x100000000),
+    let targets: &[(u32, fn(u64) -> bool)] = &[
+        (0xc0000081, |v| v != 0),
+        (0xc0000082, |v| v > 0xffffffff80000000 || v == 0),
+        (0xc0000083, |v| v > 0xffffffff80000000 || v == 0),
+        (0xc0000084, |_| true),
+        (0xc0000102, |_| true),
+        (0x4b564d00, |v| v != 0 && v < 0x100000000),
+        (0x4b564d01, |v| v != 0 && v < 0x100000000),
     ];
     let mut entries = Vec::new();
     for i in 0..data.len().saturating_sub(16) {
-        let idx=r32(data,i); let res=r32(data,i+4);
-        if res!=0{continue;} let val=r64(data,i+8);
-        for &(t,f) in targets { if idx==t&&f(val) { entries.push(kvm_msr_entry{index:t,reserved:0,data:val}); } }
+        let idx = r32(data, i);
+        let res = r32(data, i + 4);
+        if res != 0 {
+            continue;
+        }
+        let val = r64(data, i + 8);
+        for &(t, f) in targets {
+            if idx == t && f(val) {
+                entries.push(kvm_msr_entry {
+                    index: t,
+                    reserved: 0,
+                    data: val,
+                });
+            }
+        }
     }
-    let mut seen=std::collections::HashSet::new();
-    entries.reverse(); entries.retain(|e|seen.insert(e.index)); entries.reverse();
+    let mut seen = std::collections::HashSet::new();
+    entries.reverse();
+    entries.retain(|e| seen.insert(e.index));
+    entries.reverse();
     entries
 }

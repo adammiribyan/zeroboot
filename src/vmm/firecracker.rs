@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -41,7 +41,6 @@ struct SnapshotCreate {
     mem_file_path: String,
 }
 
-
 #[derive(Serialize)]
 struct VmAction {
     action_type: String,
@@ -82,32 +81,70 @@ impl FirecrackerVm {
         }
         std::thread::sleep(Duration::from_millis(50));
 
-        let vm = Self { process, socket_path, snapshot_dir };
+        let vm = Self {
+            process,
+            socket_path,
+            snapshot_dir,
+        };
 
         // Configure machine
-        vm.api_put("/machine-config", &MachineConfig {
-            vcpu_count: 1,
-            mem_size_mib: mem_mib,
-        })?;
+        vm.api_put(
+            "/machine-config",
+            &MachineConfig {
+                vcpu_count: 1,
+                mem_size_mib: mem_mib,
+            },
+        )?;
+
+        // Mask AVX2 from CPUID so no guest code selects AVX2 SIMD dispatch.
+        // AVX2 dispatch paths hang after VM fork due to incomplete vCPU state
+        // restore. By hiding AVX2 at the CPUID level, all packages (numpy,
+        // pandas, etc.) use SSE4.2 baseline which works reliably after fork.
+        vm.api_put(
+            "/cpu-config",
+            &serde_json::json!({
+                "cpuid_modifiers": [{
+                    "leaf": "0x7",
+                    "subleaf": "0x0",
+                    "flags": 0,
+                    "modifiers": [{
+                        "register": "ebx",
+                        "bitmap": "0bxxxxxxxxxxxxxxxxxxxxxxxxxx0xxxxx"
+                    }]
+                }]
+            }),
+        )?;
 
         // Set boot source
-        vm.api_put("/boot-source", &BootSource {
-            kernel_image_path: kernel_path.to_string(),
-            boot_args: format!("console=ttyS0 reboot=k panic=1 pci=off random.trust_cpu=on init={}", init_path),
-        })?;
+        vm.api_put(
+            "/boot-source",
+            &BootSource {
+                kernel_image_path: kernel_path.to_string(),
+                boot_args: format!(
+                    "console=ttyS0 reboot=k panic=1 pci=off random.trust_cpu=on init={}",
+                    init_path
+                ),
+            },
+        )?;
 
         // Add rootfs drive
-        vm.api_put("/drives/rootfs", &Drive {
-            drive_id: "rootfs".to_string(),
-            path_on_host: rootfs_path.to_string(),
-            is_root_device: true,
-            is_read_only: false,
-        })?;
+        vm.api_put(
+            "/drives/rootfs",
+            &Drive {
+                drive_id: "rootfs".to_string(),
+                path_on_host: rootfs_path.to_string(),
+                is_root_device: true,
+                is_read_only: false,
+            },
+        )?;
 
         // Start the VM
-        vm.api_put("/actions", &VmAction {
-            action_type: "InstanceStart".to_string(),
-        })?;
+        vm.api_put(
+            "/actions",
+            &VmAction {
+                action_type: "InstanceStart".to_string(),
+            },
+        )?;
 
         eprintln!("Firecracker VM started");
         Ok(vm)
@@ -124,11 +161,14 @@ impl FirecrackerVm {
 
         // Create snapshot
         eprintln!("Creating snapshot...");
-        self.api_put("/snapshot/create", &SnapshotCreate {
-            snapshot_type: "Full".to_string(),
-            snapshot_path: snapshot_path.clone(),
-            mem_file_path: mem_path.clone(),
-        })?;
+        self.api_put(
+            "/snapshot/create",
+            &SnapshotCreate {
+                snapshot_type: "Full".to_string(),
+                snapshot_path: snapshot_path.clone(),
+                mem_file_path: mem_path.clone(),
+            },
+        )?;
 
         // Wait for files
         std::thread::sleep(Duration::from_millis(500));
@@ -141,9 +181,11 @@ impl FirecrackerVm {
         }
 
         let mem_size = std::fs::metadata(&mem_path)?.len();
-        eprintln!("Snapshot created: state={}B, mem={}MB",
+        eprintln!(
+            "Snapshot created: state={}B, mem={}MB",
             std::fs::metadata(&snapshot_path)?.len(),
-            mem_size / 1024 / 1024);
+            mem_size / 1024 / 1024
+        );
 
         Ok((snapshot_path, mem_path))
     }
